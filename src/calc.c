@@ -173,6 +173,14 @@ double strtoconst(char *nptr, char **endptr)
 	return replace;
 }
 
+/*
+ * Была проблема с вводом символов, например: �.
+ * Данные символы обрабатывались в функции ниже и получали тип - операции.
+ * Для решения данной проблемы, в функции normalise были описаны все операции,
+ * доступные пользователю. Таким образом, все символы, попадающие в данную
+ * функцию и не относящиеся к операциям, вызывают ошибку "Sytax error.".
+ */
+
 char normalise(char operator)
 {
 	switch (operator) {
@@ -182,8 +190,15 @@ char normalise(char operator)
 		case '\'':
 		case '^':
 			return '^';
-		default:
-			return operator;
+		case '+':
+            return '+';
+        case '-':
+            return '-';
+        case '/':
+            return '/';
+        default:
+            printf("Sytax error.\n");
+            exit(1);
 	}
 }
 
@@ -261,6 +276,47 @@ double evaluateScope(struct Scope *scope, struct Scope **currentScope)
 	return total;
 }
 
+/*
+ * Основная проблема была со скобками.
+ * Написанная ниже функция призвана её исправить.
+ */
+
+static int check_bracket(struct Scope * scope) {
+    struct Token *token = scope->first;
+
+    char* last_symbl = NULL;
+
+	/*
+	 * 1. Проверка, что имеется открывающаяся скобка: !scope->parent.
+	 * 2. Проверка, что после скобки идёт число, а не операция:
+	 * 	  !strcmp(token->type, OP)
+	 * 3. Проверка, что в скобках есть выражение: !token
+	 */
+    if (!token || !scope->parent || !strcmp(token->type, OP)) {
+        return 0;
+    }
+
+	/*
+	 * Проверка последовательности операций:
+	 * NUM, OP, NUM, OP, NUM....
+	 * p.s были бы там еще скобки, они бы выполнились раньше, чем текущие.
+	 */
+    while (token) {
+        if (last_symbl && !strcmp(token->type, last_symbl)) {
+            return 0;
+        }
+        last_symbl = token->type;
+        token = token->next;
+    }
+	/*
+	 * Проверка окончания выражения арифметической операцией.
+	 */
+    if (!strcmp(last_symbl, OP)) {
+        return 0;
+    }
+    return 1;
+}
+
 int main(int argc, char *argv[])
 {
 	char ch, *str, *strStart;
@@ -288,6 +344,14 @@ int main(int argc, char *argv[])
 
 	/* Tokenise */
 	str = input.str;
+	/*
+	 * Ввод пустой строки приводил к падению программы.
+	 * Проверка ниже, решает эту проблему.
+	 */
+	if (!str) {
+        printf("Sytax error.\n");
+        exit(1);
+    }
 	while (*str != '\0') {
 		strStart = str;
 		if (isspace(*str)) {
@@ -297,6 +361,10 @@ int main(int argc, char *argv[])
 			addScope(currentScope, &currentScope);
 			str++;
 		} else if (*str == ')') {
+			if (!check_bracket(currentScope)){
+                printf("Sytax error.\n");
+                exit(1);
+            }
 			insertToken(currentScope, NUM, '\0', evaluateScope(currentScope, &currentScope));
 			str++;
 		} else if ((number = strtold(str, &str)) == 0.0L && (number = strtoconst(str, &str)) == 0.0L) {
